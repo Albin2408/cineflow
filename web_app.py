@@ -871,7 +871,7 @@ if st.session_state.admin_authenticated:
                 fig_bar = px.bar(mood_data, x='mood', y='count',
                                title="Mood Distribution",
                                labels={'mood': 'Mood', 'count': 'Number of Ratings'},
-                               color='count', color_continuous_scale='Set2')
+                               color='count', color_continuous_scale='Viridis')
                 st.plotly_chart(fig_bar, use_container_width=True)
             
             with col2:
