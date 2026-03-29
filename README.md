@@ -13,6 +13,7 @@ CineFlow is a personal movie tracking and recommendation app that helps you disc
 - **📌 Watchlist** - Maintain a queue of movies you want to watch
 - **🍿 AI Recommendations** - Get personalized recommendations based on your collection
 - **📺 Movie Posters** - Browse movies with their official TMDB posters
+- **🔐 Admin Dashboard** - Password-protected analytics for viewing all backend data, trends, and insights
 
 ## Prerequisites
 
@@ -102,18 +103,44 @@ The app will open in your browser at `http://localhost:8501`
 3. View your top 5 most-rewatched movies
 4. Download wrap-up reports as text files
 
+### Admin Dashboard (For Business Owners/Managers)
+
+The app includes a **password-protected admin dashboard** for viewing all backend data and analytics:
+
+#### Accessing the Admin Dashboard
+1. In the sidebar, scroll to **🔐 Admin Access**
+2. Enter the admin password (default: `admin123`, customize in `.env`)
+3. Click "🔓 Login as Admin"
+4. The **Admin Dashboard** appears at the bottom with 5 analytics tabs
+
+#### Admin Dashboard Features
+- **📊 Overview** - Collection stats, average rating, total rewatches, monthly trends
+- **⭐ Ratings Analysis** - Top/bottom rated movies, rating distribution charts
+- **👁️ Viewing Stats** - Most rewatched movies with rewatch counts
+- **😊 Mood Insights** - Mood distribution (bar and pie charts)
+- **📥 Data Export** - Download all data as CSV for reporting
+
+#### Customizing Admin Password
+Edit your `.env` file:
+```
+ADMIN_PASSWORD=your_secure_password_here
+```
+
+Perfect for companies/teams tracking movie engagement, understanding user preferences, and generating reports!
+
 ## File Structure
 
 ```
 cineflow/
 ├── app.py                    # CLI version (optional)
-├── web_app.py               # Main Streamlit app
+├── web_app.py               # Main Streamlit app with admin dashboard
 ├── database_setup.py        # Database initialization
 ├── recommend.py             # Recommendation logic
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables (not in repo)
 ├── .gitignore              # Git ignore rules
 ├── README.md               # This file
+├── ADMIN_SETUP.md          # Admin dashboard setup guide
 └── cineflow.db             # SQLite database (not in repo)
 ```
 
@@ -130,6 +157,7 @@ cineflow/
 - **TMDB API** - Movie data and recommendations
 - **Pandas** - Data manipulation
 - **Scikit-learn** - ML-based recommendations
+- **Plotly** - Interactive data visualizations for admin dashboard
 - **Python-dotenv** - Environment variable management
 
 ## Tips & Tricks

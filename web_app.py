@@ -6,14 +6,24 @@ import os
 from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import plotly.express as px
+import plotly.graph_objects as go
 
 # Page configuration
-st.set_page_config(page_title="CineFlow AI", page_icon="🎬")
+st.set_page_config(page_title="CineFlow AI", page_icon="🎬", layout="wide")
 st.title("🎬 CineFlow: AI Movie Discovery")
 
 # Load environment
 load_dotenv()
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # Change in .env file
+
+# --- Admin Authentication ---
+def check_admin_password(password):
+    return password == ADMIN_PASSWORD
+
+if 'admin_authenticated' not in st.session_state:
+    st.session_state.admin_authenticated = False
 
 # --- Helper Functions ---
 def get_data():
@@ -303,8 +313,162 @@ def get_recommendations(tmdb_id):
     except:
         return []
 
-# --- Sidebar: Your Collection & Watchlist ---
+# --- ADMIN ANALYTICS FUNCTIONS ---
+def get_top_rated_movies(limit=10):
+    """Get top-rated movies from collection"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT m.title, m.release_date, r.rating, COUNT(r.id) as rating_count
+        FROM movies m
+        LEFT JOIN ratings r ON m.id = r.movie_id
+        WHERE r.rating IS NOT NULL
+        GROUP BY m.id
+        ORDER BY r.rating DESC
+        LIMIT ?
+    ''', conn, params=(limit,))
+    conn.close()
+    return df
+
+def get_lowest_rated_movies(limit=10):
+    """Get lowest-rated movies from collection"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT m.title, m.release_date, r.rating, COUNT(r.id) as rating_count
+        FROM movies m
+        LEFT JOIN ratings r ON m.id = r.movie_id
+        WHERE r.rating IS NOT NULL
+        GROUP BY m.id
+        ORDER BY r.rating ASC
+        LIMIT ?
+    ''', conn, params=(limit,))
+    conn.close()
+    return df
+
+def get_most_watched_movies(limit=10):
+    """Get most watched (rewatched) movies"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT title, release_date, watch_count
+        FROM movies
+        WHERE watch_count > 0
+        ORDER BY watch_count DESC
+        LIMIT ?
+    ''', conn, params=(limit,))
+    conn.close()
+    return df
+
+def get_mood_distribution():
+    """Get count of ratings by mood"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT mood, COUNT(*) as count
+        FROM ratings
+        WHERE mood IS NOT NULL
+        GROUP BY mood
+        ORDER BY count DESC
+    ''', conn)
+    conn.close()
+    return df
+
+def get_rating_distribution():
+    """Get distribution of ratings"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT 
+            ROUND(rating, 0) as rating_range,
+            COUNT(*) as count
+        FROM ratings
+        WHERE rating IS NOT NULL
+        GROUP BY ROUND(rating, 0)
+        ORDER BY rating_range
+    ''', conn)
+    conn.close()
+    return df
+
+def get_collection_stats():
+    """Get overall collection statistics"""
+    conn = sqlite3.connect('cineflow.db')
+    cursor = conn.cursor()
+    
+    # Total movies
+    cursor.execute('SELECT COUNT(*) FROM movies')
+    total_movies = cursor.fetchone()[0]
+    
+    # Average rating
+    cursor.execute('SELECT AVG(rating) FROM ratings WHERE rating IS NOT NULL')
+    avg_rating = cursor.fetchone()[0] or 0
+    
+    # Total rewatches
+    cursor.execute('SELECT SUM(watch_count) FROM movies')
+    total_rewatches = cursor.fetchone()[0] or 0
+    
+    # Watchlist count
+    cursor.execute('SELECT COUNT(*) FROM watchlist')
+    watchlist_count = cursor.fetchone()[0]
+    
+    # Rated movies
+    cursor.execute('SELECT COUNT(DISTINCT movie_id) FROM ratings')
+    rated_count = cursor.fetchone()[0]
+    
+    conn.close()
+    return {
+        'total_movies': total_movies,
+        'avg_rating': round(avg_rating, 2),
+        'total_rewatches': total_rewatches,
+        'watchlist_count': watchlist_count,
+        'rated_count': rated_count
+    }
+
+def get_monthly_activity():
+    """Get monthly activity data"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT strftime('%Y-%m', rated_at) as month, COUNT(*) as movies_rated
+        FROM ratings
+        WHERE rated_at IS NOT NULL
+        GROUP BY strftime('%Y-%m', rated_at)
+        ORDER BY month DESC
+        LIMIT 12
+    ''', conn)
+    conn.close()
+    return df
+
+def get_all_ratings_data():
+    """Get all ratings data for detailed analysis"""
+    conn = sqlite3.connect('cineflow.db')
+    df = pd.read_sql_query('''
+        SELECT m.title, m.release_date, r.rating, r.mood, r.review, r.rated_at, m.watch_count
+        FROM movies m
+        LEFT JOIN ratings r ON m.id = r.movie_id
+        ORDER BY r.rated_at DESC
+    ''', conn)
+    conn.close()
+    return df
+
+# --- Sidebar Navigation ---
 st.sidebar.header("📚 Your Library")
+
+# Admin Login Section
+st.sidebar.divider()
+st.sidebar.subheader("🔐 Admin Access")
+
+if not st.session_state.admin_authenticated:
+    admin_password = st.sidebar.text_input("Enter admin password:", type="password", key="admin_pass_input")
+    if st.sidebar.button("🔓 Login as Admin"):
+        if check_admin_password(admin_password):
+            st.session_state.admin_authenticated = True
+            st.sidebar.success("✅ Admin authenticated!")
+            st.rerun()
+        else:
+            st.sidebar.error("❌ Incorrect password")
+else:
+    st.sidebar.success("✅ Admin mode active")
+    if st.sidebar.button("🔒 Logout Admin"):
+        st.session_state.admin_authenticated = False
+        st.rerun()
+
+st.sidebar.divider()
+
 collection_tab, watchlist_tab = st.sidebar.tabs(["Collection", "Watchlist"])
 
 df = get_data()
@@ -592,3 +756,186 @@ Thanks for using CineFlow! 🎬
         )
     else:
         st.info("No movies rated this year yet!")
+
+# --- ADMIN DASHBOARD ---
+if st.session_state.admin_authenticated:
+    st.divider()
+    st.header("🔐 Admin Dashboard")
+    
+    admin_tab1, admin_tab2, admin_tab3, admin_tab4, admin_tab5 = st.tabs(
+        ["📊 Overview", "⭐ Ratings Analysis", "👁️ Viewing Stats", "😊 Mood Insights", "📥 Data Export"]
+    )
+    
+    # TAB 1: OVERVIEW
+    with admin_tab1:
+        st.subheader("Collection Overview")
+        stats = get_collection_stats()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Movies", stats['total_movies'])
+        with col2:
+            st.metric("Average Rating", f"{stats['avg_rating']}/10")
+        with col3:
+            st.metric("Total Rewatches", stats['total_rewatches'])
+        with col4:
+            st.metric("Watchlist Items", stats['watchlist_count'])
+        
+        st.metric("Movies Rated", stats['rated_count'])
+        
+        st.divider()
+        st.subheader("Monthly Activity")
+        monthly_data = get_monthly_activity()
+        if not monthly_data.empty:
+            fig = px.bar(monthly_data, x='month', y='movies_rated', 
+                        title="Movies Rated Per Month", 
+                        labels={'month': 'Month', 'movies_rated': 'Number of Movies'},
+                        color='movies_rated', color_continuous_scale='Blues')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No monthly data available yet")
+    
+    # TAB 2: RATING ANALYSIS
+    with admin_tab2:
+        st.subheader("Rating Analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Top 10 Highest-Rated Movies**")
+            top_rated = get_top_rated_movies(10)
+            if not top_rated.empty:
+                fig = px.bar(top_rated, x='title', y='rating',
+                            title="Top Rated Movies",
+                            labels={'title': 'Movie', 'rating': 'Rating'},
+                            color='rating', color_continuous_scale='Greens')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("View Details"):
+                    st.dataframe(top_rated, hide_index=True, use_container_width=True)
+            else:
+                st.info("No rated movies yet")
+        
+        with col2:
+            st.write("**Top 10 Lowest-Rated Movies**")
+            lowest_rated = get_lowest_rated_movies(10)
+            if not lowest_rated.empty:
+                fig = px.bar(lowest_rated, x='title', y='rating',
+                            title="Lowest Rated Movies",
+                            labels={'title': 'Movie', 'rating': 'Rating'},
+                            color='rating', color_continuous_scale='Reds')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("View Details"):
+                    st.dataframe(lowest_rated, hide_index=True, use_container_width=True)
+            else:
+                st.info("No rated movies yet")
+        
+        st.divider()
+        st.subheader("Rating Distribution")
+        rating_dist = get_rating_distribution()
+        if not rating_dist.empty:
+            fig = px.bar(rating_dist, x='rating_range', y='count',
+                        title="Distribution of Ratings",
+                        labels={'rating_range': 'Rating', 'count': 'Number of Movies'},
+                        color='count', color_continuous_scale='Viridis')
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # TAB 3: VIEWING STATS
+    with admin_tab3:
+        st.subheader("Viewing & Rewatch Statistics")
+        
+        most_watched = get_most_watched_movies(15)
+        if not most_watched.empty:
+            fig = px.bar(most_watched, x='title', y='watch_count',
+                        title="Most Rewatched Movies",
+                        labels={'title': 'Movie', 'watch_count': 'Rewatch Count'},
+                        color='watch_count', color_continuous_scale='Purples')
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.write("**Detailed Rewatch Data**")
+            st.dataframe(most_watched, hide_index=True, use_container_width=True)
+        else:
+            st.info("No rewatch data available yet")
+    
+    # TAB 4: MOOD INSIGHTS
+    with admin_tab4:
+        st.subheader("Mood Analysis")
+        
+        mood_data = get_mood_distribution()
+        if not mood_data.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig_bar = px.bar(mood_data, x='mood', y='count',
+                               title="Mood Distribution",
+                               labels={'mood': 'Mood', 'count': 'Number of Ratings'},
+                               color='count', color_continuous_scale='Set2')
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+            with col2:
+                fig_pie = px.pie(mood_data, names='mood', values='count',
+                               title="Mood Percentage Distribution")
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            st.divider()
+            st.write("**Mood Statistics**")
+            st.dataframe(mood_data, hide_index=True, use_container_width=True)
+        else:
+            st.info("No mood data available yet")
+    
+    # TAB 5: DATA EXPORT
+    with admin_tab5:
+        st.subheader("Export Data")
+        
+        export_type = st.selectbox("Select data to export:", 
+                                   ["All Ratings", "Top Rated", "Most Watched", "Mood Analysis", "Full Database"])
+        
+        if export_type == "All Ratings":
+            data = get_all_ratings_data()
+            csv = data.to_csv(index=False)
+            st.download_button("📥 Download All Ratings (CSV)", csv, "all_ratings.csv", "text/csv")
+        
+        elif export_type == "Top Rated":
+            data = get_top_rated_movies(100)
+            csv = data.to_csv(index=False)
+            st.download_button("📥 Download Top Rated (CSV)", csv, "top_rated.csv", "text/csv")
+        
+        elif export_type == "Most Watched":
+            data = get_most_watched_movies(100)
+            csv = data.to_csv(index=False)
+            st.download_button("📥 Download Most Watched (CSV)", csv, "most_watched.csv", "text/csv")
+        
+        elif export_type == "Mood Analysis":
+            data = get_mood_distribution()
+            csv = data.to_csv(index=False)
+            st.download_button("📥 Download Mood Data (CSV)", csv, "mood_analysis.csv", "text/csv")
+        
+        elif export_type == "Full Database":
+            st.write("Select which tables to export:")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("📥 Movies"):
+                    conn = sqlite3.connect('cineflow.db')
+                    movies_data = pd.read_sql_query("SELECT * FROM movies", conn)
+                    conn.close()
+                    csv = movies_data.to_csv(index=False)
+                    st.download_button("Download Movies.csv", csv, "movies.csv", "text/csv")
+            
+            with col2:
+                if st.button("📥 Ratings"):
+                    conn = sqlite3.connect('cineflow.db')
+                    ratings_data = pd.read_sql_query("SELECT * FROM ratings", conn)
+                    conn.close()
+                    csv = ratings_data.to_csv(index=False)
+                    st.download_button("Download Ratings.csv", csv, "ratings.csv", "text/csv")
+            
+            with col3:
+                if st.button("📥 Watchlist"):
+                    conn = sqlite3.connect('cineflow.db')
+                    watchlist_data = pd.read_sql_query("SELECT * FROM watchlist", conn)
+                    conn.close()
+                    csv = watchlist_data.to_csv(index=False)
+                    st.download_button("Download Watchlist.csv", csv, "watchlist.csv", "text/csv")
